@@ -56,8 +56,9 @@ jobs:
           # Patch CI copy to use raw virtual key codes while preserving behavior.
           $hotkeyFile = "$env:PROJECT_DIR/Services/HotkeyService.cs"
           $hotkeyContent = Get-Content $hotkeyFile -Raw
-          $hotkeyContent = $hotkeyContent.Replace(
-            "public int Register(string name, System.Windows.Input.Key key, ModifierKeys mods, Action action)",
+          $hotkeyContent = [regex]::Replace(
+            $hotkeyContent,
+            "public int Register\(string name,\s*System\.Windows\.Input\.Key key,\s*(?:System\.Windows\.Input\.)?ModifierKeys mods,\s*Action action\)",
             "public int Register(string name, uint key, ModifierKeys mods, Action action)"
           )
           $hotkeyContent = $hotkeyContent.Replace(
@@ -80,6 +81,10 @@ public enum ModifierKeys : uint
               "private readonly Dictionary<int, (string Name, Action Action)> _hotkeys = new();",
               $insert + "private readonly Dictionary<int, (string Name, Action Action)> _hotkeys = new();"
             )
+          }
+
+          if ($hotkeyContent.Contains("System.Windows.Input.Key")) {
+            throw "Failed to patch HotkeyService signature for MAUI WinUI build."
           }
 
           Set-Content -Path $hotkeyFile -Value $hotkeyContent -NoNewline

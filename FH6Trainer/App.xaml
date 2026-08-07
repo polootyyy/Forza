@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<Application xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             x:Class="Polootyyy.App">
+    <Application.Resources>
+        <ResourceDictionary>
+            <Color x:Key="Primary">#FF2D55</Color>
+            <Color x:Key="Secondary">#0A84FF</Color>
+            <Color x:Key="Tertiary">#FFD60A</Color>
+            <Color x:Key="DarkBg">#0D0D1A</Color>
+            <Color x:Key="CardBg">#12122A</Color>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

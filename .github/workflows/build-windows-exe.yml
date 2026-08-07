@@ -30,50 +30,10 @@ jobs:
           Expand-Archive -Path $srcZip -DestinationPath $dest -Force
           "PROJECT_DIR=$dest/FH6Trainer" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Patch package reference in CI copy
+      - name: Apply CI compatibility patches
         shell: pwsh
         run: |
-          $proj = "$env:PROJECT_DIR/FH6Trainer.csproj"
-          [xml]$xml = Get-Content $proj
-
-          $found = $false
-          foreach ($itemGroup in $xml.Project.ItemGroup) {
-            foreach ($pkg in $itemGroup.PackageReference) {
-              if ($pkg.Include -eq "Microsoft.Web.WebView2.Core.Projection") {
-                $pkg.Include = "Microsoft.Web.WebView2"
-                $found = $true
-              }
-            }
-          }
-
-          if (-not $found) {
-            Write-Host "No Microsoft.Web.WebView2.Core.Projection reference found; continuing."
-          }
-
-          $xml.Save($proj)
-
-          # HotkeyService uses WPF key types not available in MAUI WinUI builds.
-          # Patch CI copy to use raw virtual key codes while preserving behavior.
-          $hotkeyFile = "$env:PROJECT_DIR/Services/HotkeyService.cs"
-          $hotkeyContent = Get-Content $hotkeyFile -Raw
-          $hotkeyContent = $hotkeyContent.Replace(
-            "public int Register(string name, System.Windows.Input.Key key, ModifierKeys mods, Action action)",
-            "public int Register(string name, uint key, ModifierKeys mods, Action action)"
-          )
-          $hotkeyContent = $hotkeyContent.Replace(
-            "uint vk = (uint)KeyInterop.VirtualKeyFromKey(key);",
-            "uint vk = key;"
-          )
-
-          if (-not ($hotkeyContent.Contains("public enum ModifierKeys"))) {
-            $insert = "[Flags]`npublic enum ModifierKeys : uint`n{`n    Alt = MOD_ALT,`n    Control = MOD_CONTROL,`n    Shift = MOD_SHIFT`n}`n`n"
-            $hotkeyContent = $hotkeyContent.Replace(
-              "private readonly Dictionary<int, (string Name, Action Action)> _hotkeys = new();",
-              $insert + "private readonly Dictionary<int, (string Name, Action Action)> _hotkeys = new();"
-            )
-          }
-
-          Set-Content -Path $hotkeyFile -Value $hotkeyContent -NoNewline
+          & "$env:GITHUB_WORKSPACE/ci-build-patcher.ps1" -ProjectDir "$env:PROJECT_DIR"
 
       - name: Install MAUI workload
         run: dotnet workload install maui-windows

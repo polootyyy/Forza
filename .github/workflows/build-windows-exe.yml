@@ -66,16 +66,7 @@ jobs:
           )
 
           if (-not ($hotkeyContent.Contains("public enum ModifierKeys"))) {
-            $insert = @"
-[Flags]
-public enum ModifierKeys : uint
-{
-    Alt = MOD_ALT,
-    Control = MOD_CONTROL,
-    Shift = MOD_SHIFT
-}
-
-"@
+            $insert = "[Flags]`npublic enum ModifierKeys : uint`n{`n    Alt = MOD_ALT,`n    Control = MOD_CONTROL,`n    Shift = MOD_SHIFT`n}`n`n"
             $hotkeyContent = $hotkeyContent.Replace(
               "private readonly Dictionary<int, (string Name, Action Action)> _hotkeys = new();",
               $insert + "private readonly Dictionary<int, (string Name, Action Action)> _hotkeys = new();"

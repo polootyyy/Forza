@@ -30,11 +30,6 @@ jobs:
           Expand-Archive -Path $srcZip -DestinationPath $dest -Force
           "PROJECT_DIR=$dest/FH6Trainer" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Apply CI compatibility patches
-        shell: pwsh
-        run: |
-          & "$env:GITHUB_WORKSPACE/ci-build-patcher.ps1" -ProjectDir "$env:PROJECT_DIR"
-
       - name: Install MAUI workload
         run: dotnet workload install maui-windows
 

@@ -1,0 +1,85 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Extract project archive
+        shell: pwsh
+        run: |
+          $srcZip = Join-Path $env:GITHUB_WORKSPACE "Polootyyy_FH6_Trainer.zip"
+          $dest = Join-Path $env:RUNNER_TEMP "src"
+          Expand-Archive -Path $srcZip -DestinationPath $dest -Force
+          "PROJECT_DIR=$dest/FH6Trainer" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Patch package reference in CI copy
+        shell: pwsh
+        run: |
+          $proj = "$env:PROJECT_DIR/FH6Trainer.csproj"
+          [xml]$xml = Get-Content $proj
+
+          $found = $false
+          foreach ($itemGroup in $xml.Project.ItemGroup) {
+            foreach ($pkg in $itemGroup.PackageReference) {
+              if ($pkg.Include -eq "Microsoft.Web.WebView2.Core.Projection") {
+                $pkg.Include = "Microsoft.Web.WebView2"
+                $found = $true
+              }
+            }
+          }
+
+          if (-not $found) {
+            Write-Host "No Microsoft.Web.WebView2.Core.Projection reference found; continuing."
+          }
+
+          $xml.Save($proj)
+
+      - name: Install MAUI workload
+        run: dotnet workload install maui-windows
+
+      - name: Restore
+        run: dotnet restore "$env:PROJECT_DIR/FH6Trainer.csproj" -p:SkipValidateMauiImplicitPackageReferences=true
+
+      - name: Publish self-contained single-file EXE
+        run: dotnet publish "$env:PROJECT_DIR/FH6Trainer.csproj" -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:SkipValidateMauiImplicitPackageReferences=true -o "$env:RUNNER_TEMP/publish"
+
+      - name: Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Polootyyy-win-x64
+          path: |
+            ${{ runner.temp }}/publish/Polootyyy.exe
+            ${{ runner.temp }}/publish/*.dll
+
+      - name: Zip publish folder
+        shell: pwsh
+        run: |
+          $zipOut = Join-Path $env:RUNNER_TEMP "Polootyyy-win-x64.zip"
+          Compress-Archive -Path "$env:RUNNER_TEMP/publish/*" -DestinationPath $zipOut -Force
+          "RELEASE_ZIP=$zipOut" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Create GitHub release (manual runs only)
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: win-build-${{ github.run_number }}
+          name: Windows Build ${{ github.run_number }}
+          files: ${{ env.RELEASE_ZIP }}

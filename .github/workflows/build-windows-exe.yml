@@ -58,16 +58,15 @@ jobs:
       - name: Restore
         run: dotnet restore "$env:PROJECT_DIR/FH6Trainer.csproj" -p:TargetFramework=net10.0-windows10.0.19041.0 -p:SkipValidateMauiImplicitPackageReferences=true
 
-      - name: Publish self-contained single-file EXE
-        run: dotnet publish "$env:PROJECT_DIR/FH6Trainer.csproj" -f net10.0-windows10.0.19041.0 -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -p:SkipValidateMauiImplicitPackageReferences=true -o "$env:RUNNER_TEMP/publish"
+      - name: Publish unpackaged Windows app folder
+        run: dotnet publish "$env:PROJECT_DIR/FH6Trainer.csproj" -f net10.0-windows10.0.19041.0 -c Release -r win-x64 --self-contained true -p:WindowsPackageType=None -p:PublishSingleFile=false -p:SkipValidateMauiImplicitPackageReferences=true -o "$env:RUNNER_TEMP/publish"
 
-      - name: Upload EXE artifact
+      - name: Upload Windows app artifact
         uses: actions/upload-artifact@v4
         with:
           name: Polootyyy-win-x64
           path: |
-            ${{ runner.temp }}/publish/Polootyyy.exe
-            ${{ runner.temp }}/publish/*.dll
+            ${{ runner.temp }}/publish/**
 
       - name: Zip publish folder
         shell: pwsh

@@ -83,8 +83,11 @@ public enum ModifierKeys : uint
             )
           }
 
-          if ($hotkeyContent.Contains("System.Windows.Input.Key")) {
+          if ($hotkeyContent.Contains("public int Register(string name, System.Windows.Input.Key key")) {
             throw "Failed to patch HotkeyService signature for MAUI WinUI build."
+          }
+          if (-not [regex]::IsMatch($hotkeyContent, "public int Register\(string name,\s*uint key,\s*ModifierKeys mods,\s*Action action\)")) {
+            throw "Failed to verify patched HotkeyService signature for MAUI WinUI build."
           }
 
           Set-Content -Path $hotkeyFile -Value $hotkeyContent -NoNewline

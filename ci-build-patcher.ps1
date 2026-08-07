@@ -6,59 +6,47 @@ param(
     [string]$ProjectDir
 )
 
+$ErrorActionPreference = "Stop"
 Write-Host "=== CI Build Patcher ==="
 Write-Host "Project directory: $ProjectDir"
 
-# 1. Fix csproj: replace invalid WebView2 package reference AND add MAUI.Controls
+# 1. Fix csproj: replace invalid WebView2 package reference
 $projPath = Join-Path $ProjectDir "FH6Trainer.csproj"
 Write-Host "Patching csproj: $projPath"
-[xml]$projXml = Get-Content $projPath
+$projContent = Get-Content $projPath -Raw
+$projContent = $projContent.Replace(
+    '<PackageReference Include="Microsoft.Web.WebView2.Core.Projection" Version="1.0.3179.45" />',
+    '<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3179.45" />'
+)
+Set-Content -Path $projPath -Value $projContent -NoNewline
+Write-Host "  Fixed WebView2 package reference"
 
-# Fix WebView2 reference
-$foundWebView = $false
-foreach ($itemGroup in $projXml.Project.ItemGroup) {
-    foreach ($pkg in $itemGroup.PackageReference) {
-        if ($pkg.Include -eq "Microsoft.Web.WebView2.Core.Projection") {
-            $pkg.Include = "Microsoft.Web.WebView2"
-            $foundWebView = $true
-            Write-Host "  Replaced Microsoft.Web.WebView2.Core.Projection -> Microsoft.Web.WebView2"
-        }
-    }
-}
+# 2. Add MAUI.Controls package via dotnet CLI
+Write-Host "Adding Microsoft.Maui.Controls package..."
+dotnet add "$projPath" package Microsoft.Maui.Controls --version 10.0.20 2>&1 | Out-Host
+Write-Host "  MAUI.Controls added"
 
-# Add MAUI.Controls package reference (required for .NET 10 MAUI)
-$foundMaui = $false
-foreach ($itemGroup in $projXml.Project.ItemGroup) {
-    foreach ($pkg in $itemGroup.PackageReference) {
-        if ($pkg.Include -eq "Microsoft.Maui.Controls") {
-            $foundMaui = $true
-        }
-    }
-}
-if (-not $foundMaui) {
-    $mauiRef = $projXml.CreateElement("PackageReference")
-    $mauiRef.SetAttribute("Include", "Microsoft.Maui.Controls")
-    $mauiRef.SetAttribute("Version", "10.0.20")
-    $projXml.Project.ItemGroup[0].AppendChild($mauiRef) | Out-Null
-    Write-Host "  Added Microsoft.Maui.Controls package reference"
-}
-
-$projXml.Save($projPath)
-
-# 2. Fix HotkeyService.cs: replace WPF key types with raw virtual key codes
+# 3. Fix HotkeyService.cs: replace WPF key types
 $hotkeyPath = Join-Path $ProjectDir "Services" "HotkeyService.cs"
 Write-Host "Patching HotkeyService: $hotkeyPath"
 $content = Get-Content $hotkeyPath -Raw
 
+# Replace using statements - remove WPF Input reference
+$content = $content.Replace("using System.Windows.Input;", "// using System.Windows.Input; // patched for MAUI compat")
+
+# Replace Register method signature
 $content = $content.Replace(
     "public int Register(string name, System.Windows.Input.Key key, ModifierKeys mods, Action action)",
     "public int Register(string name, uint key, ModifierKeys mods, Action action)"
 )
+
+# Replace KeyInterop call
 $content = $content.Replace(
     "uint vk = (uint)KeyInterop.VirtualKeyFromKey(key);",
     "uint vk = key;"
 )
 
+# Add ModifierKeys enum
 if (-not $content.Contains("public enum ModifierKeys")) {
     $enumDef = @"
 
@@ -78,39 +66,37 @@ public enum ModifierKeys : uint
 }
 
 Set-Content -Path $hotkeyPath -Value $content -NoNewline
-Write-Host "  HotkeyService patched successfully"
+Write-Host "  HotkeyService patched"
 
-# 3. Fix SignatureService.cs: replace Reloaded.Memory.Sigscan API with manual scanner
+# 4. Fix SignatureService.cs: replace Reloaded.Memory.Sigscan with manual scanner
 $sigPath = Join-Path $ProjectDir "Services" "SignatureService.cs"
 Write-Host "Patching SignatureService: $sigPath"
 $sigContent = Get-Content $sigPath -Raw
 
-# Remove Reloaded.Memory.Sigscan usings
+# Remove Reloaded usings
 $sigContent = $sigContent.Replace("using Reloaded.Memory.Sigscan;`r`n", "")
 $sigContent = $sigContent.Replace("using Reloaded.Memory.Sigscan.Definitions;`r`n", "")
 
-# Replace the scanner usage block
-$oldBlock = @'
-            var scanner = new Scanner(patternBytes, mask);
-            var result = scanner.FindPattern(moduleBytes);
+# Replace scanner block
+$sigContent = $sigContent.Replace(
+    'var scanner = new Scanner(patternBytes, mask);',
+    '// Scanner replaced with manual FindPattern for MAUI compat'
+)
+$sigContent = $sigContent.Replace(
+    'var result = scanner.FindPattern(moduleBytes);',
+    'long foundOffset = FindPattern(moduleBytes, patternBytes, mask);'
+)
+$sigContent = $sigContent.Replace(
+    'if (result != -1)',
+    'if (foundOffset != -1)'
+)
+$sigContent = $sigContent.Replace(
+    'nint address = moduleBase + result + additionalOffset;',
+    'nint address = moduleBase + (int)foundOffset + additionalOffset;'
+)
 
-            if (result != -1)
-            {
-                nint address = moduleBase + result + additionalOffset;
-'@
-
-$newBlock = @'
-            long foundOffset = FindPattern(moduleBytes, patternBytes, mask);
-
-            if (foundOffset != -1)
-            {
-                nint address = moduleBase + (int)foundOffset + additionalOffset;
-'@
-
-$sigContent = $sigContent.Replace($oldBlock, $newBlock)
-
-# Add manual FindPattern helper method before the last closing brace
-$helperMethod = @'
+# Add FindPattern helper before last closing brace
+$helper = @'
 
     private static long FindPattern(byte[] data, byte[] pattern, string mask)
     {
@@ -131,13 +117,12 @@ $helperMethod = @'
     }
 '@
 
-# Insert before the final closing brace of the class
 $lastBrace = $sigContent.LastIndexOf("}")
 if ($lastBrace -gt 0) {
-    $sigContent = $sigContent.Insert($lastBrace, $helperMethod)
+    $sigContent = $sigContent.Insert($lastBrace, $helper)
 }
 
 Set-Content -Path $sigPath -Value $sigContent -NoNewline
-Write-Host "  SignatureService patched successfully"
+Write-Host "  SignatureService patched"
 
 Write-Host "=== CI Build Patcher Complete ==="

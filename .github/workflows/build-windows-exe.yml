@@ -76,8 +76,8 @@ jobs:
           Compress-Archive -Path "$env:RUNNER_TEMP/publish/*" -DestinationPath $zipOut -Force
           "RELEASE_ZIP=$zipOut" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Create GitHub release (manual runs only)
-        if: github.event_name == 'workflow_dispatch'
+      - name: Create GitHub release
+        if: success()
         uses: softprops/action-gh-release@v2
         with:
           tag_name: win-build-${{ github.run_number }}
